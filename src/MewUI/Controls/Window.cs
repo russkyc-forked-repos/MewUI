@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
+using Aprillz.MewUI.Diagnostics;
 using Aprillz.MewUI.Input;
 using Aprillz.MewUI.Platform;
 using Aprillz.MewUI.Rendering;
@@ -43,6 +45,7 @@ public partial class Window : ContentControl, ILayoutRoundingHost
     private IGraphicsContext? _renderContext;
     private Action? _cachedInvalidateBackend;
     private Action? _cachedLayoutAndRender;
+    private LayoutPerformanceStats _lastLayoutPerformanceStats;
 
     /// <summary>
     /// Gets the window backend (internal use only, e.g. for IME mode switching from controls).
@@ -1426,6 +1429,15 @@ public partial class Window : ContentControl, ILayoutRoundingHost
     /// </summary>
     public void PerformLayout()
     {
+        var profiler = PerformanceProfiler.Instance;
+        bool profiling = profiler.IsEnabled;
+        long layoutStart = profiling ? Stopwatch.GetTimestamp() : 0;
+        long measureTicks = 0;
+        long arrangeTicks = 0;
+        bool measureRan = false;
+        bool arrangeRan = false;
+        using var layoutScope = profiling ? ProfilerMarkers.WindowLayout.Auto() : default;
+
         if (Handle == 0 || Content == null)
         {
             return;
@@ -1433,11 +1445,17 @@ public partial class Window : ContentControl, ILayoutRoundingHost
 
         // Drain queued visual-state invalidations before layout reads state-dependent properties
         // (e.g. a style trigger may adjust size/padding based on IsEnabled).
-        UpdateVisualStates();
+        using (profiling ? ProfilerMarkers.VisualStateUpdate.Auto() : default)
+        {
+            UpdateVisualStates();
+        }
 
         // Window is the visual root — it has no Parent, so OnVisualRootChanged never fires.
         // Resolve its style here before reading layout-affecting properties like Padding.
-        EnsureStyleResolved();
+        using (profiling ? ProfilerMarkers.StyleResolve.Auto() : default)
+        {
+            EnsureStyleResolved();
+        }
 
         var padding = Padding;
         var mode = WindowSize.Mode;
@@ -1453,7 +1471,16 @@ public partial class Window : ContentControl, ILayoutRoundingHost
                 ? WindowSize.MaxHeight - padding.VerticalThickness
                 : Height - padding.VerticalThickness;
 
-            Content.Measure(new Size(Math.Max(0, measureWidth), Math.Max(0, measureHeight)));
+            long measureStart = profiling ? Stopwatch.GetTimestamp() : 0;
+            using (profiling ? ProfilerMarkers.ContentMeasure.Auto() : default)
+            {
+                Content.Measure(new Size(Math.Max(0, measureWidth), Math.Max(0, measureHeight)));
+            }
+            if (profiling)
+            {
+                measureTicks += Stopwatch.GetTimestamp() - measureStart;
+            }
+            measureRan = true;
 
             var desired = Content.DesiredSize;
             var fitWidth = mode is WindowSizeMode.FitContentWidth or WindowSizeMode.FitContentSize
@@ -1489,6 +1516,16 @@ public partial class Window : ContentControl, ILayoutRoundingHost
             !IsLayoutDirty(Content) &&
             !HasOverlayLayoutDirty())
         {
+            if (profiling)
+            {
+                _lastLayoutPerformanceStats = new LayoutPerformanceStats(
+                    FrameTimingBuilder.ToMilliseconds(Stopwatch.GetTimestamp() - layoutStart),
+                    FrameTimingBuilder.ToMilliseconds(measureTicks),
+                    FrameTimingBuilder.ToMilliseconds(arrangeTicks),
+                    layoutRan: false,
+                    measureRan,
+                    arrangeRan);
+            }
             return;
         }
 
@@ -1503,10 +1540,28 @@ public partial class Window : ContentControl, ILayoutRoundingHost
         {
             if (needMeasure)
             {
-                Content.Measure(contentSize);
+                long measureStart = profiling ? Stopwatch.GetTimestamp() : 0;
+                using (profiling ? ProfilerMarkers.ContentMeasure.Auto() : default)
+                {
+                    Content.Measure(contentSize);
+                }
+                if (profiling)
+                {
+                    measureTicks += Stopwatch.GetTimestamp() - measureStart;
+                }
+                measureRan = true;
             }
 
-            Content.Arrange(new Rect(padding.Left, padding.Top, contentSize.Width, contentSize.Height));
+            long arrangeStart = profiling ? Stopwatch.GetTimestamp() : 0;
+            using (profiling ? ProfilerMarkers.ContentArrange.Auto() : default)
+            {
+                Content.Arrange(new Rect(padding.Left, padding.Top, contentSize.Width, contentSize.Height));
+            }
+            if (profiling)
+            {
+                arrangeTicks += Stopwatch.GetTimestamp() - arrangeStart;
+            }
+            arrangeRan = true;
 
             if (!IsLayoutDirty(Content))
             {
@@ -1524,9 +1579,23 @@ public partial class Window : ContentControl, ILayoutRoundingHost
         _lastLayoutPadding = padding;
         _lastLayoutContent = Content;
 
-        LayoutAdorners();
-        LayoutPopups();
-        OverlayLayer.Layout(clientSize);
+        using (profiling ? ProfilerMarkers.OverlayLayout.Auto() : default)
+        {
+            LayoutAdorners();
+            LayoutPopups();
+            OverlayLayer.Layout(clientSize);
+        }
+
+        if (profiling)
+        {
+            _lastLayoutPerformanceStats = new LayoutPerformanceStats(
+                FrameTimingBuilder.ToMilliseconds(Stopwatch.GetTimestamp() - layoutStart),
+                FrameTimingBuilder.ToMilliseconds(measureTicks),
+                FrameTimingBuilder.ToMilliseconds(arrangeTicks),
+                layoutRan: true,
+                measureRan,
+                arrangeRan);
+        }
     }
 
     private bool HasOverlayLayoutDirty()
@@ -1857,26 +1926,37 @@ public partial class Window : ContentControl, ILayoutRoundingHost
 
     }
 
-    internal void RenderFrameToBitmap(IBitmapRenderTarget bitmapTarget)
+    internal void RenderFrameToSurface(IBitmapRenderTarget surface)
     {
-        if (bitmapTarget == null)
+        if (surface == null)
         {
-            throw new ArgumentNullException(nameof(bitmapTarget));
+            throw new ArgumentNullException(nameof(surface));
         }
 
         var clientSizeDip = new Size(
-            bitmapTarget.PixelWidth / Math.Max(1.0, bitmapTarget.DpiScale),
-            bitmapTarget.PixelHeight / Math.Max(1.0, bitmapTarget.DpiScale));
+            surface.PixelWidth / Math.Max(1.0, surface.DpiScale),
+            surface.PixelHeight / Math.Max(1.0, surface.DpiScale));
 
-        RenderFrameCore(bitmapTarget, clientSizeDip);
+        RenderFrameCore(surface, clientSizeDip);
     }
 
     private void RenderFrameCore(IRenderTarget target, Size clientSize)
     {
-        // Update animations before rendering so controls see current values.
-        AnimationManager.Instance.Update();
+        var profiler = PerformanceProfiler.Instance;
+        var frameTiming = _excludeFromProfiler ? default : profiler.BeginFrame(_profilerSourceId);
 
-        // Bitmap targets are one-shot (different target instance per call).
+        // Update animations before rendering so controls see current values.
+        long phaseStart = frameTiming.Enabled ? Stopwatch.GetTimestamp() : 0;
+        using (frameTiming.Enabled ? ProfilerMarkers.AnimationUpdate.Auto() : default)
+        {
+            AnimationManager.Instance.Update();
+        }
+        if (frameTiming.Enabled)
+        {
+            frameTiming.AnimationTicks += Stopwatch.GetTimestamp() - phaseStart;
+        }
+
+        // Render surfaces are one-shot (different target instance per call).
         // Window-targeted contexts are cached so backends can pool per-frame state.
         bool oneShot = target is IBitmapRenderTarget;
         IGraphicsContext context = oneShot
@@ -1885,7 +1965,15 @@ public partial class Window : ContentControl, ILayoutRoundingHost
 
         try
         {
-            context.BeginFrame(target);
+            phaseStart = frameTiming.Enabled ? Stopwatch.GetTimestamp() : 0;
+            using (frameTiming.Enabled ? ProfilerMarkers.BeginFrame.Auto() : default)
+            {
+                context.BeginFrame(target);
+            }
+            if (frameTiming.Enabled)
+            {
+                frameTiming.BeginFrameTicks += Stopwatch.GetTimestamp() - phaseStart;
+            }
 
             Color clearColor;
             if (AllowsTransparency)
@@ -1899,12 +1987,20 @@ public partial class Window : ContentControl, ILayoutRoundingHost
                 clearColor = Background.A > 0 ? Background : Theme.Palette.WindowBackground;
             }
 
-            context.Clear(clearColor);
-
-            if (AllowsTransparency && Background.A > 0)
+            phaseStart = frameTiming.Enabled ? Stopwatch.GetTimestamp() : 0;
+            using (frameTiming.Enabled ? ProfilerMarkers.Clear.Auto() : default)
             {
-                // Draw the background through the normal pipeline so alpha is handled consistently.
-                context.FillRectangle(new Rect(0, 0, clientSize.Width, clientSize.Height), Background);
+                context.Clear(clearColor);
+
+                if (AllowsTransparency && Background.A > 0)
+                {
+                    // Draw the background through the normal pipeline so alpha is handled consistently.
+                    context.FillRectangle(new Rect(0, 0, clientSize.Width, clientSize.Height), Background);
+                }
+            }
+            if (frameTiming.Enabled)
+            {
+                frameTiming.RenderBodyTicks += Stopwatch.GetTimestamp() - phaseStart;
             }
 
             // Ensure nothing paints outside the client area.
@@ -1914,16 +2010,71 @@ public partial class Window : ContentControl, ILayoutRoundingHost
 
             try
             {
-                Content?.Render(context);
-
-                for (int i = 0; i < _adorners.Count; i++)
+                phaseStart = frameTiming.Enabled ? Stopwatch.GetTimestamp() : 0;
+                using (frameTiming.Enabled ? ProfilerMarkers.ContentRender.Auto() : default)
                 {
-                    _adorners[i].Element.Render(context);
+                    Content?.Render(context);
+                }
+                if (frameTiming.Enabled)
+                {
+                    frameTiming.RenderBodyTicks += Stopwatch.GetTimestamp() - phaseStart;
                 }
 
-                _popupManager.Render(context);
+                phaseStart = frameTiming.Enabled ? Stopwatch.GetTimestamp() : 0;
+                using (frameTiming.Enabled ? ProfilerMarkers.AdornerRender.Auto() : default)
+                {
+                    for (int i = 0; i < _adorners.Count; i++)
+                    {
+                        var adorner = _adorners[i].Element;
+#if DEBUG
+                        if (ReferenceEquals(adorner, _performanceAdorner))
+                        {
+                            continue;
+                        }
+#endif
 
-                OverlayLayer.Render(context);
+                        adorner.Render(context);
+                    }
+                }
+                if (frameTiming.Enabled)
+                {
+                    frameTiming.RenderBodyTicks += Stopwatch.GetTimestamp() - phaseStart;
+                }
+
+                phaseStart = frameTiming.Enabled ? Stopwatch.GetTimestamp() : 0;
+                using (frameTiming.Enabled ? ProfilerMarkers.PopupRender.Auto() : default)
+                {
+                    _popupManager.Render(context);
+                }
+                if (frameTiming.Enabled)
+                {
+                    frameTiming.RenderBodyTicks += Stopwatch.GetTimestamp() - phaseStart;
+                }
+
+                phaseStart = frameTiming.Enabled ? Stopwatch.GetTimestamp() : 0;
+                using (frameTiming.Enabled ? ProfilerMarkers.OverlayRender.Auto() : default)
+                {
+                    OverlayLayer.Render(context);
+                }
+                if (frameTiming.Enabled)
+                {
+                    frameTiming.RenderBodyTicks += Stopwatch.GetTimestamp() - phaseStart;
+                }
+
+#if DEBUG
+                if (_performanceAdorner != null)
+                {
+                    phaseStart = frameTiming.Enabled ? Stopwatch.GetTimestamp() : 0;
+                    using (frameTiming.Enabled ? ProfilerMarkers.DevToolsRender.Auto() : default)
+                    {
+                        _performanceAdorner.Render(context);
+                    }
+                    if (frameTiming.Enabled)
+                    {
+                        frameTiming.DevToolsTicks += Stopwatch.GetTimestamp() - phaseStart;
+                    }
+                }
+#endif
             }
             finally
             {

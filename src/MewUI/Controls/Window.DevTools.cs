@@ -1,5 +1,6 @@
 #if DEBUG
 using Aprillz.MewUI.Controls;
+using Aprillz.MewUI.Diagnostics;
 using Aprillz.MewUI.Rendering;
 
 namespace Aprillz.MewUI;
@@ -28,6 +29,7 @@ public partial class Window
     {
         KeyBindings.Add(new KeyBinding(new KeyGesture(Key.I, ModifierKeys.Primary | ModifierKeys.Shift), ToggleDebugInspector));
         KeyBindings.Add(new KeyBinding(new KeyGesture(Key.T, ModifierKeys.Primary | ModifierKeys.Shift), ToggleDebugVisualTree));
+        InitializeDebugPerformanceProfiler();
     }
 
     private void ToggleDebugInspector()
@@ -256,6 +258,7 @@ public partial class Window
             => $"[{r.X:0.#},{r.Y:0.#} {r.Width:0.#}x{r.Height:0.#}]";
     }
 
+
     private sealed class DebugVisualTreeWindow : Window
     {
         private readonly Window _target;
@@ -277,6 +280,7 @@ public partial class Window
 
         public DebugVisualTreeWindow(Window target)
         {
+            ExcludeFromProfiler = true;
             _target = target;
 
             Title = "Live Visual Tree";
