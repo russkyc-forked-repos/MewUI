@@ -571,7 +571,7 @@ internal sealed class Win32WindowBackend : IWindowBackend
                 }
                 return User32.DefWindowProc(Handle, msg, wParam, lParam);
 
-            case 0x0083: // WM_NCCALCSIZE
+            case WindowMessages.WM_NCCALCSIZE:
                 if ((_allowsTransparency || _extendTitleBarHeight > 0) && wParam != 0)
                 {
                     // Remove the default non-client area by not deflating the rect.
@@ -712,8 +712,7 @@ internal sealed class Win32WindowBackend : IWindowBackend
             case WindowMessages.WM_IME_ENDCOMPOSITION:
                 return HandleImeEndComposition();
 
-            case 0x0282: // WM_IME_NOTIFY
-                ImeLogger.Write($"WM_IME_NOTIFY wParam=0x{wParam:X}");
+            case WindowMessages.WM_IME_NOTIFY:
                 return User32.DefWindowProc(Handle, msg, wParam, lParam);
 
             case WindowMessages.WM_SETFOCUS:
