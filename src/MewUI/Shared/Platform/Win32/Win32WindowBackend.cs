@@ -33,6 +33,7 @@ internal sealed class Win32WindowBackend : IWindowBackend
     private uint _savedConversion;
     private uint _savedSentence;
     private nint _currentCursor;
+    private bool _isTrackingMouseLeave;
     private const uint MonitorDefaultToPrimary = 1;
     private const uint MonitorDefaultToNearest = 2;
 
@@ -1730,6 +1731,24 @@ internal sealed class Win32WindowBackend : IWindowBackend
         return 0;
     }
 
+    // WM_MOUSELEAVE is only delivered after an explicit TrackMouseEvent(TME_LEAVE) registration,
+    // and the registration is consumed on each leave — so we re-register on every MouseMove until leave fires.
+    private void EnsureMouseLeaveTracking()
+    {
+        if (_isTrackingMouseLeave || Handle == 0)
+            return;
+
+        var tme = new TRACKMOUSEEVENT
+        {
+            cbSize = (uint)Marshal.SizeOf<TRACKMOUSEEVENT>(),
+            dwFlags = User32.TME_LEAVE,
+            hwndTrack = Handle,
+            dwHoverTime = 0,
+        };
+        if (User32.TrackMouseEvent(ref tme))
+            _isTrackingMouseLeave = true;
+    }
+
     private nint HandleMouseButton(nint lParam, MouseButton button, bool isDown, bool isDoubleClickMessage)
     {
         int xPx = (short)(lParam.ToInt64() & 0xFFFF);
@@ -1800,6 +1819,7 @@ internal sealed class Win32WindowBackend : IWindowBackend
 
     private nint HandleMouseLeave()
     {
+        _isTrackingMouseLeave = false;
         WindowInputRouter.UpdateMouseOver(Window, null);
         return 0;
     }
