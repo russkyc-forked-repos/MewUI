@@ -429,11 +429,13 @@ public sealed partial class Image : FrameworkElement
     {
         base.OnVisualRootChanged(oldRoot, newRoot);
 
-        // Auto-release backend resources when detached from visual tree.
+        // Detached (e.g. a virtualized tile recycled): drop the raster cache, but hand the vector
+        // surface to the window's reclaimer so a re-realize can reuse it instead of rebuilding the
+        // offscreen surface. RenderVector reclaims it (size-matched) on the next paint.
         if (newRoot == null)
         {
             ClearCache();
-            ClearVectorCache();
+            ParkVectorCache(oldRoot as Window);
         }
     }
 
