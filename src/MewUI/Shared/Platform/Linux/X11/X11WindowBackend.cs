@@ -205,12 +205,19 @@ internal sealed class X11WindowBackend : IWindowBackend
                 break;
 
             case Controls.WindowState.Maximized:
+                SendNetWmState(false, "_NET_WM_STATE_FULLSCREEN");
                 SendNetWmState(true, "_NET_WM_STATE_MAXIMIZED_HORZ", "_NET_WM_STATE_MAXIMIZED_VERT");
                 break;
 
             case Controls.WindowState.Normal:
+                SendNetWmState(false, "_NET_WM_STATE_FULLSCREEN");
                 SendNetWmState(false, "_NET_WM_STATE_MAXIMIZED_HORZ", "_NET_WM_STATE_MAXIMIZED_VERT");
                 NativeX11.XMapWindow(Display, Handle);
+                break;
+
+            case Controls.WindowState.FullScreen:
+                // The WM removes decorations and covers the panels while fullscreen, independent of _MOTIF hints.
+                SendNetWmState(true, "_NET_WM_STATE_FULLSCREEN");
                 break;
         }
     }
@@ -271,7 +278,7 @@ internal sealed class X11WindowBackend : IWindowBackend
 
         long flags;
         long decorations;
-        if (_allowsTransparency)
+        if (_allowsTransparency || Window.Borderless)
         {
             // Borderless: assert only decorations-off (re-asserted here since this is PropModeReplace). Don't
             // constrain FUNCTIONS - it is pointless without native buttons and can kill WM move/resize.
@@ -292,6 +299,17 @@ internal sealed class X11WindowBackend : IWindowBackend
             NativeX11.XChangeProperty(Display, Handle, atom, atom,
                 32, 0 /* PropModeReplace */, (nint)hints, 5);
         }
+    }
+
+    public void SetBorderless(bool value)
+    {
+        if (Display == 0 || Handle == 0)
+        {
+            return;
+        }
+
+        // Borderless is read from Window.Borderless inside ApplyMotifHints; reassert the decoration hint.
+        ApplyMotifHints();
     }
 
     public void SetTopmost(bool value)
@@ -1497,11 +1515,14 @@ internal sealed class X11WindowBackend : IWindowBackend
         var maxH = NativeX11.XInternAtom(Display, "_NET_WM_STATE_MAXIMIZED_HORZ", false);
         var maxV = NativeX11.XInternAtom(Display, "_NET_WM_STATE_MAXIMIZED_VERT", false);
         var hidden = NativeX11.XInternAtom(Display, "_NET_WM_STATE_HIDDEN", false);
+        var fullscreen = NativeX11.XInternAtom(Display, "_NET_WM_STATE_FULLSCREEN", false);
 
         bool isMaximized = maxH != 0 && maxV != 0 && atoms.Contains(maxH) && atoms.Contains(maxV);
         bool isMinimized = hidden != 0 && atoms.Contains(hidden);
+        bool isFullScreen = fullscreen != 0 && atoms.Contains(fullscreen);
 
         var newState = isMinimized ? Controls.WindowState.Minimized
+            : isFullScreen ? Controls.WindowState.FullScreen
             : isMaximized ? Controls.WindowState.Maximized
             : Controls.WindowState.Normal;
 

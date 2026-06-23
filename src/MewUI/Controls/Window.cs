@@ -405,6 +405,10 @@ public partial class Window : ContentControl, ILayoutRoundingHost
         MewProperty<double>.Register<Window>(nameof(ExtendClientAreaTitleBarHeight), 0.0, MewPropertyOptions.None,
             static (self, _, _) => self.OnExtendClientAreaChanged());
 
+    public static readonly MewProperty<bool> BorderlessProperty =
+        MewProperty<bool>.Register<Window>(nameof(Borderless), false, MewPropertyOptions.None,
+            static (self, _, _) => self.OnBorderlessChanged());
+
     public static readonly MewProperty<PlatformWindowOptions?> PlatformOptionsProperty =
         MewProperty<PlatformWindowOptions?>.Register<Window>(nameof(PlatformOptions), null, MewPropertyOptions.None,
             static (self, _, _) => self._backend?.SetPlatformOptions(self.PlatformOptions));
@@ -567,6 +571,17 @@ public partial class Window : ContentControl, ILayoutRoundingHost
     }
 
     /// <summary>
+    /// Gets or sets whether the entire native non-client area (title bar and border) is removed.
+    /// Independent of <see cref="WindowState"/> and preserved across fullscreen transitions.
+    /// A borderless window has no native resize/move grips; use <see cref="DragMove"/> / <see cref="DragResize"/>.
+    /// </summary>
+    public bool Borderless
+    {
+        get => GetValue(BorderlessProperty);
+        set => SetValue(BorderlessProperty, value);
+    }
+
+    /// <summary>
     /// Gets or sets the platform-specific window options.
     /// Setting options for a mismatched platform throws
     /// <see cref="InvalidOperationException"/> at backend attach time.
@@ -608,6 +623,8 @@ public partial class Window : ContentControl, ILayoutRoundingHost
     private void OnAllowsTransparencyChanged() => _backend?.SetAllowsTransparency(AllowsTransparency);
 
     private void OnExtendClientAreaChanged() => _backend?.SetExtendClientAreaToTitleBar(ExtendClientAreaTitleBarHeight);
+
+    private void OnBorderlessChanged() => _backend?.SetBorderless(Borderless);
 
     /// <summary>
     /// Gets the actual window client width in DIPs.
@@ -1825,6 +1842,8 @@ public partial class Window : ContentControl, ILayoutRoundingHost
         _backend.SetAllowsTransparency(AllowsTransparency);
         if (ExtendClientAreaTitleBarHeight > 0)
             _backend.SetExtendClientAreaToTitleBar(ExtendClientAreaTitleBarHeight);
+        if (Borderless)
+            _backend.SetBorderless(true);
         if (!double.IsNaN(WindowSize.Width) && !double.IsNaN(WindowSize.Height))
             _backend.SetClientSize(WindowSize.Width, WindowSize.Height);
         if (Topmost)
