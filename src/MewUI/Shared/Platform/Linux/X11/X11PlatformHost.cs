@@ -3,7 +3,6 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 
-using Aprillz.MewUI.Input;
 using Aprillz.MewUI.Native;
 
 using NativeX11 = Aprillz.MewUI.Native.X11;
@@ -549,6 +548,27 @@ public sealed class X11PlatformHost : IPlatformHost
         _cursorCache.Clear();
     }
 
+    private static bool _xErrorHandlerInstalled;
+
+    // Installs a process-wide non-fatal X error handler. Xlib's default handler prints the failed request and
+    // calls exit(); ours swallows the (mostly async, teardown-time) errors and returns so the process keeps
+    // running. Process-global, so install once.
+    private static unsafe void InstallXErrorHandler()
+    {
+        if (_xErrorHandlerInstalled)
+        {
+            return;
+        }
+
+        _xErrorHandlerInstalled = true;
+        NativeX11.XSetErrorHandler((nint)(delegate* unmanaged[Cdecl]<nint, nint, int>)&OnXError);
+    }
+
+    // TODO: returning 0 swallows ALL X protocol errors so Xlib doesn't print-and-exit on a recurring
+    // teardown error burst. Downside: also hides genuine X errors - narrow to specific codes later.
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    private static int OnXError(nint display, nint errorEventPtr) => 0;   // swallow: continue instead of exit()
+
     internal nint Display
     {
         get; private set;
@@ -561,11 +581,19 @@ public sealed class X11PlatformHost : IPlatformHost
             return;
         }
 
+        // Before the first Xlib call: enable Xlib's internal locking. The offscreen GLX worker context is
+        // made current and renders FBOs on background threads while the main thread renders the UI window and
+        // pumps events - concurrent access to the same Display. Without this, Xlib's unlocked request buffer
+        // corrupts under that race (garbage XErrorEvents, occasional SIGSEGV).
+        NativeX11.XInitThreads();
+
         Display = NativeX11.XOpenDisplay(0);
         if (Display == 0)
         {
             throw new InvalidOperationException("XOpenDisplay failed.");
         }
+
+        InstallXErrorHandler();   // log async X protocol errors instead of the default print-and-exit
 
         int screen = NativeX11.XDefaultScreen(Display);
         _rootWindow = NativeX11.XRootWindow(Display, screen);
