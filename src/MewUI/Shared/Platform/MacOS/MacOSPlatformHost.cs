@@ -13,9 +13,7 @@ public sealed class MacOSPlatformHost : IPlatformHost
     private bool _running;
     private ThemeVariant _lastSystemTheme = ThemeVariant.Light;
     private nint _lastInputWindow;
-    private long _lastFrameTicks;
     private int _themeUpdateRequested;
-    private bool _lastContinuous;
 
     public MacOSPlatformHost()
     {
@@ -218,8 +216,6 @@ public sealed class MacOSPlatformHost : IPlatformHost
 
         _running = true;
         app.Dispatcher = _dispatcher;
-        _lastFrameTicks = Stopwatch.GetTimestamp();
-        _lastContinuous = app.RenderLoopSettings.IsContinuous;
 
         // Note: Window backend will create NSWindow on Show().
         mainWindow.Show();
@@ -239,8 +235,8 @@ public sealed class MacOSPlatformHost : IPlatformHost
     private void PumpLoop(Func<bool>? keepRunning)
     {
         var app = _app!;
-        _lastFrameTicks = Stopwatch.GetTimestamp();
-        _lastContinuous = app.RenderLoopSettings.IsContinuous;
+        long lastFrameTicks = Stopwatch.GetTimestamp();
+        bool lastContinuous = app.RenderLoopSettings.IsContinuous;
 
         while (_running && (keepRunning == null || keepRunning()))
         {
@@ -257,7 +253,7 @@ public sealed class MacOSPlatformHost : IPlatformHost
             }
 
             var scheduler = app.RenderLoopSettings;
-            if (_lastContinuous && !scheduler.IsContinuous)
+            if (lastContinuous && !scheduler.IsContinuous)
             {
                 foreach (var backend in _windows.Values)
                 {
@@ -325,7 +321,7 @@ public sealed class MacOSPlatformHost : IPlatformHost
                     RequestRender();
                 }
             }
-            _lastContinuous = scheduler.IsContinuous;
+            lastContinuous = scheduler.IsContinuous;
 
             if (!_running)
             {
@@ -354,7 +350,7 @@ public sealed class MacOSPlatformHost : IPlatformHost
                         long ticksPerSecond = Stopwatch.Frequency;
                         long frameTicks = ticksPerSecond / fps;
                         long now = Stopwatch.GetTimestamp();
-                        long elapsed = now - _lastFrameTicks;
+                        long elapsed = now - lastFrameTicks;
 
                         int frameWaitMs = 0;
                         if (elapsed < frameTicks)
@@ -364,7 +360,7 @@ public sealed class MacOSPlatformHost : IPlatformHost
 
                         int timerWaitMs = _dispatcher.GetPollTimeoutMs(maxMs: frameWaitMs <= 0 ? 1000 : frameWaitMs);
                         timeoutMs = frameWaitMs <= 0 ? timerWaitMs : (timerWaitMs < 0 ? frameWaitMs : Math.Min(frameWaitMs, timerWaitMs));
-                        _lastFrameTicks = Stopwatch.GetTimestamp();
+                        lastFrameTicks = Stopwatch.GetTimestamp();
                     }
                     else
                     {
