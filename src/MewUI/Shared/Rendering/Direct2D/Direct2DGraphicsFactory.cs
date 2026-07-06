@@ -467,6 +467,7 @@ public sealed unsafe partial class Direct2DGraphicsFactory : IGraphicsFactory, I
             onRecreateTarget: null,
             onPresentTarget: () => { target.IncrementVersion(); return 0; },
             ownsRenderTarget: false,
+            textFormatCache: TextFormatCache,
             resolveRenderTarget: t => ((Direct2DPixelRenderSurface)t).GetOrCreateDcRenderTarget(d2dFactory));
         return ctx;
     }
@@ -491,6 +492,7 @@ public sealed unsafe partial class Direct2DGraphicsFactory : IGraphicsFactory, I
             onRecreateTarget: null,
             onPresentTarget: () => { target.IncrementVersion(); return 0; },
             ownsRenderTarget: false,
+            textFormatCache: TextFormatCache,
             resolveRenderTarget: null);
         return ctx;
     }
