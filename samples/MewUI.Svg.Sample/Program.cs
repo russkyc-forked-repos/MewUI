@@ -544,18 +544,18 @@ static void Startup()
 #pragma warning disable CA1416
     Win32Platform.Register();
 
-    //if (args.Any(a => a is "--gdi"))
-    //{
-    //    GdiBackend.Register();
-    //}
-    //else if (args.Any(a => a is "--vg"))
-    //{
-    //    MewVGWin32Backend.Register();
-    //}
-    //else
-    //{
+    if (args.Any(a => a is "--gdi"))
+    {
+        GdiBackend.Register();
+    }
+    else if (args.Any(a => a is "--vg"))
+    {
+        MewVGWin32Backend.Register();
+    }
+    else
+    {
         Direct2DBackend.Register();
-    //}
+    }
 #pragma warning restore CA1416
 #elif MEWUI_GALLERY_OSX
     MacOSPlatform.Register();
