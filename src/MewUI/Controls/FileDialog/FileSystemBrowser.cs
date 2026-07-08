@@ -310,4 +310,4 @@ internal sealed class FileSystemBrowser
 
 internal readonly record struct FileSystemEntry(string FullPath, string Name, bool IsDirectory, long Size, DateTime Modified);
 
-internal readonly record struct PlaceItem(string Label, string Path, FileIconKind Kind, ShellPlaceKind Place = ShellPlaceKind.Folder, bool IsHeader = false);
+public readonly record struct PlaceItem(string Label, string Path, FileIconKind Kind, ShellPlaceKind Place = ShellPlaceKind.Folder, bool IsHeader = false);

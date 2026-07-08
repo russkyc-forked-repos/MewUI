@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace Aprillz.MewUI.Platform;
+namespace Aprillz.MewUI.Platform.MacOS;
 /// <summary>
 /// macOS: resolves icons BY FILE EXTENSION via <c>[NSWorkspace iconForFileType:]</c>, never touching the
 /// file on disk. The NSImage is rasterized to a straight-alpha BGRA32 buffer. Safe on the UI thread.

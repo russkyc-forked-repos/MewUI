@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace Aprillz.MewUI.Platform;
+namespace Aprillz.MewUI.Platform.Linux.X11;
 
 /// <summary>
 /// Resolves freedesktop/XDG theme PNGs by MIME type derived from the file extension. Never touches

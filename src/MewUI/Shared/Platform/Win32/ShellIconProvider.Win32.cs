@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 using System.Text;
 
-namespace Aprillz.MewUI.Platform;
+namespace Aprillz.MewUI.Platform.Win32;
 
 /// <summary>
 /// Windows: <c>SHGetFileInfo</c> with <c>SHGFI_USEFILEATTRIBUTES</c> resolves the icon from the extension

@@ -3,7 +3,7 @@ using Aprillz.MewUI.Rendering;
 
 namespace Aprillz.MewUI.Platform;
 
-internal enum FileIconKind
+public enum FileIconKind
 {
     File,
     Folder,
@@ -152,7 +152,7 @@ internal sealed class FileIconElement : FrameworkElement
         // Exact device pixel size of the (already pixel-snapped) box. The provider returns the icon at
         // exactly this size, so the backend draws it 1:1 (no scaling -> crisp at any DPI).
         int targetPx = Math.Max(1, (int)Math.Round(snappedBox.Width * scale));
-        var provider = ShellIconProviders.ForCurrentOS();
+        var provider = ShellIconProviders.Current;
 
         string key = _shellPlace != null
             ? $"place:{_shellPlace}|{targetPx}"
@@ -207,7 +207,7 @@ internal sealed class FileIconElement : FrameworkElement
         }
 
         string path = realPath;
-        var provider = ShellIconProviders.ForCurrentOS();
+        var provider = ShellIconProviders.Current;
         Task.Run(() =>
         {
             ImageSource? real = null;
