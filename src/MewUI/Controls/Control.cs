@@ -341,9 +341,56 @@ public abstract class Control : FrameworkElement
         // Attach through the Parent setter so theme/DPI/inherited state fans out into the
         // template subtree before parts are used.
         root.Parent = this;
-        _templateInstance = new ControlTemplateInstance { VisualRoot = root, Context = context };
+        var instance = new ControlTemplateInstance { VisualRoot = root, Context = context };
+        _templateInstance = instance;
+
+        // Wire presenters after the root is attached so projected content lands under a
+        // rooted presenter and picks up the correct inherited state.
+        VisualTree.Visit(root, element =>
+        {
+            if (element is ContentPresenter presenter && presenter.TemplatedParent == null)
+            {
+                instance.Presenters.Add(presenter);
+                presenter.AttachToTemplatedParent(this);
+            }
+        });
+
+        OnTemplateInstanceAttached();
         OnApplyTemplate();
         return true;
+    }
+
+    /// <summary>
+    /// Called after the template instance is attached and presenters are wired,
+    /// before <see cref="OnApplyTemplate"/>. Slots detach compat visual links here.
+    /// </summary>
+    private protected virtual void OnTemplateInstanceAttached() { }
+
+    /// <summary>
+    /// Called after the template instance is torn down. Slots re-host their
+    /// logical children visually here so the non-template path keeps working.
+    /// </summary>
+    private protected virtual void OnTemplateInstanceDetached() { }
+
+    internal Element? TemplateVisualRoot => _templateInstance?.VisualRoot;
+
+    internal bool HasTemplateInstance => _templateInstance != null;
+
+    internal void RefreshTemplatePresenters(MewProperty property)
+    {
+        var instance = _templateInstance;
+        if (instance == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < instance.Presenters.Count; i++)
+        {
+            if (instance.Presenters[i].ContentSource == property)
+            {
+                instance.Presenters[i].UpdateProjection();
+            }
+        }
     }
 
     /// <summary>
@@ -366,10 +413,21 @@ public abstract class Control : FrameworkElement
         if (instance != null)
         {
             _templateInstance = null;
+
+            // Release projected content first so it is not discarded with the template tree.
+            for (int i = 0; i < instance.Presenters.Count; i++)
+            {
+                instance.Presenters[i].DetachFromTemplatedParent();
+            }
+
+            instance.Context.ReleaseBindings();
+
             if (instance.VisualRoot.Parent == this)
             {
                 instance.VisualRoot.Parent = null;
             }
+
+            OnTemplateInstanceDetached();
         }
     }
 
